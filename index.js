@@ -203,7 +203,7 @@ const drawTriangles = model => model.faces.map(face => {
   const triangleNormal = normalize(crossProduct(ab, ac));
 
   const lightIntensity = dotProduct(triangleNormal, lightVector);
-console.log(lightIntensity);
+
   const toScreenCoordinateX = toScreenCoordinate(width);
   const toScreenCoordinateY = toScreenCoordinate(height);
 
