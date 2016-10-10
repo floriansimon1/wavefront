@@ -189,7 +189,7 @@ const toScreenCoordinate = R.curry((resolution, coordinate) => {
   return Math.round((coordinate + 1) * (resolution / 2));
 });
 
-const lightVector = { x: 0, y: 0, z: 1 };
+const lightVector = { x: 0, y: 0, z: -1 };
 
 const drawTriangles = model => model.faces.map(face => {
   // Assumes things are 1-indexed in the model.
@@ -200,7 +200,7 @@ const drawTriangles = model => model.faces.map(face => {
   const ab = vectorFrom(a, b);
   const ac = vectorFrom(a, c);
 
-  const triangleNormal = normalize(crossProduct(ab, ac));
+  const triangleNormal = normalize(crossProduct(ac, ab));
 
   const lightIntensity = dotProduct(triangleNormal, lightVector);
 
