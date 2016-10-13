@@ -18,7 +18,7 @@ const canvasElement = document.querySelector("canvas");
 const vectorFrom = ({ x: x1, y: y1, z: z1 }, { x: x2, y: y2, z: z2 }) => ({
   x: x2 - x1,
   y: y2 - y1,
-  z: z2 - z1
+  z: z1 && z2 ? z2 - z1 : undefined
 });
 
 const crossProduct = (a, b) => ({
@@ -45,8 +45,7 @@ const normalize = v => {
   };
 };
 
-// Relies on barycentric coordinates calculations.
-const pointInTriangle = (p, a, b, c) => {
+const barycentric = (p, a, b, c) => {
   const ab = vectorFrom(a, b);
   const ac = vectorFrom(a, c);
   const pa = vectorFrom(p, a);
@@ -64,25 +63,42 @@ const pointInTriangle = (p, a, b, c) => {
     }
   );
 
-  return (
-    1 - (zCoordinates.x + zCoordinates.y) / zCoordinates.z >= 0
-    && zCoordinates.x / zCoordinates.z >= 0
-    && zCoordinates.y / zCoordinates.z >= 0
-  );
+  return {
+    x: 1 - (zCoordinates.x + zCoordinates.y) / zCoordinates.z,
+    y: zCoordinates.x / zCoordinates.z,
+    z: zCoordinates.y / zCoordinates.z
+  };
 };
 
-const triangle = (image, color, { a, b, c }) => {
+// Uses barycentric coordinates as input.
+const pointInTriangle = ({ x, y, z }) => {
+  return x >= 0 && y >= 0 && z >= 0;
+};
+
+const triangle = (image, zBuffer, color, { a, b, c }) => {
   const [minX, minY, maxX, maxY] = [
     Math.max(Math.min(a.x, b.x, c.x), 0),
     Math.max(Math.min(a.y, b.y, c.y), 0),
-    Math.min(Math.max(a.x, b.x, c.x), width),
-    Math.min(Math.max(a.y, b.y, c.y), height)
+    Math.min(Math.max(a.x, b.x, c.x), width - 1),
+    Math.min(Math.max(a.y, b.y, c.y), height - 1)
   ];
 
-  for (var x = minX; x <= maxX; x++) {
-    for (var y = minY; y <= maxY; y++) {
-      if (pointInTriangle({ x, y }, a, b, c)) {
-        putPixel(image, x, y, color);
+  for (let x = minX; x <= maxX; x++) {
+    for (let y = minY; y <= maxY; y++) {
+      const coordinates = barycentric({ x, y }, a, b, c);
+
+      const z = coordinates.x * a.z + coordinates * b.z + coordinates.z * c.z;
+
+      if (pointInTriangle(coordinates)) {
+        const nearer = zBuffer[x][y]
+        .map(currentNearestZ => currentNearestZ < z)
+        .getOrElse(true);
+
+        if (nearer) {
+          zBuffer[x][y] = Maybe.Just(z);
+
+          putPixel(image, x, y, color);
+        }
       }
     }
   }
@@ -191,40 +207,45 @@ const toScreenCoordinate = R.curry((resolution, coordinate) => {
 
 const lightVector = { x: 0, y: 0, z: -1 };
 
-const drawTriangles = model => model.faces.map(face => {
-  // Assumes things are 1-indexed in the model.
-  const a = model.vertices[face.a - 1];
-  const b = model.vertices[face.b - 1];
-  const c = model.vertices[face.c - 1];
+const drawTriangles = model => {
+  const zBuffer = R.range(0, width).map(() => R.range(0, height).map(() => Maybe.Nothing()));
 
-  const ab = vectorFrom(a, b);
-  const ac = vectorFrom(a, c);
+  model.faces.map(face => {
+    // Assumes things are 1-indexed in the model.
+    const a = model.vertices[face.a - 1];
+    const b = model.vertices[face.b - 1];
+    const c = model.vertices[face.c - 1];
 
-  const triangleNormal = normalize(crossProduct(ac, ab));
+    const ab = vectorFrom(a, b);
+    const ac = vectorFrom(a, c);
 
-  const lightIntensity = dotProduct(triangleNormal, lightVector);
+    const triangleNormal = normalize(crossProduct(ac, ab));
 
-  const toScreenCoordinateX = toScreenCoordinate(width);
-  const toScreenCoordinateY = toScreenCoordinate(height);
+    const lightIntensity = dotProduct(triangleNormal, lightVector);
 
-  if (lightIntensity > 0) {
-    triangle(
-      image,
+    const toScreenCoordinateX = toScreenCoordinate(width);
+    const toScreenCoordinateY = toScreenCoordinate(height);
 
-      {
-        r: Math.round(lightIntensity * 40),
-        g: Math.round(lightIntensity * 100),
-        b: Math.round(lightIntensity * 200)
-      },
+    if (lightIntensity > 0) {
+      triangle(
+        image,
+        zBuffer,
 
-      {
-        a: { x: toScreenCoordinateX(a.x), y: toScreenCoordinateY(a.y) },
-        b: { x: toScreenCoordinateX(b.x), y: toScreenCoordinateY(b.y) },
-        c: { x: toScreenCoordinateX(c.x), y: toScreenCoordinateY(c.y) }
-      }
-    );
-  }
-});
+        {
+          r: Math.round(lightIntensity * 40),
+          g: Math.round(lightIntensity * 100),
+          b: Math.round(lightIntensity * 200)
+        },
+
+        {
+          a: { x: toScreenCoordinateX(a.x), y: toScreenCoordinateY(a.y), z: a.z },
+          b: { x: toScreenCoordinateX(b.x), y: toScreenCoordinateY(b.y), z: b.z },
+          c: { x: toScreenCoordinateX(c.x), y: toScreenCoordinateY(c.y), z: c.z }
+        }
+      );
+    }
+  });
+};
 
 drawTriangles(model);
 
